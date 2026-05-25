@@ -50,7 +50,7 @@ export class AIController {
   @ApiOperation({
     summary: 'Get proactive AI insights for a user',
     description:
-      'Analyzes the user's bureau data and BRE strategies to generate proactive, ' +
+      `Analyzes the user's bureau data and BRE strategies to generate proactive, ` +
       'personalized financial insights. Rule-based in demo mode. ' +
       'PRODUCTION: Integrate FinGPT / RAG pipeline here.',
   })
