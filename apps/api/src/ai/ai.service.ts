@@ -79,6 +79,51 @@ interface ChatContext {
  *
  * Replace the rule-based methods below with LLM calls when integrating.
  */
+// ─── Ollama (llama3.2:3b) — local LLM ───────────────────────────────────────
+const OLLAMA_URL = process.env.OLLAMA_URL ?? 'http://localhost:11434';
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? 'llama3.2:3b';
+
+const SYSTEM_PROMPT = `You are FinBot, an expert Indian financial advisor working for Finfinity — a digital credit marketplace.
+You help users optimise their loan portfolio, reduce EMI burden, improve CIBIL scores, and build wealth.
+
+RULES:
+- Always give specific, actionable advice with rupee amounts and percentages
+- Reference Indian financial products: Home Loan, Personal Loan, LAP, Balance Transfer, Top-up, Dropline OD
+- Mention relevant tax sections: 80C, 24(b), 80E, 80CCD when applicable
+- Use ₹ symbol for amounts
+- Keep responses concise (3-5 sentences max unless explaining a complex topic)
+- If you don't know something specific to the user's profile, say so and ask for more details
+- Never recommend illegal or unethical financial practices
+- Lenders you work with: HDFC, ICICI, Axis, Kotak, SBI, Bajaj Finserv, Tata Capital, Poonawalla, Fullerton, IDFC, Cholamandalam, IndusInd, Piramal`;
+
+async function callOllama(
+  userMessage: string,
+  systemContext: string,
+  history: Array<{ role: string; content: string }> = [],
+): Promise<string> {
+  try {
+    const prompt = [
+      `SYSTEM: ${SYSTEM_PROMPT}\n\nUSER FINANCIAL CONTEXT:\n${systemContext}`,
+      ...history.slice(-6).map(h => `${h.role.toUpperCase()}: ${h.content}`),
+      `USER: ${userMessage}`,
+      'ASSISTANT:',
+    ].join('\n\n');
+
+    const res = await fetch(`${OLLAMA_URL}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: OLLAMA_MODEL, prompt, stream: false, options: { temperature: 0.7, num_predict: 512 } }),
+      signal: AbortSignal.timeout(20000),
+    });
+
+    if (!res.ok) throw new Error(`Ollama HTTP ${res.status}`);
+    const data = await res.json() as { response?: string };
+    return (data.response ?? '').trim();
+  } catch (err) {
+    return ''; // fall back to rule-based
+  }
+}
+
 @Injectable()
 export class AIService {
   private readonly logger = new Logger(AIService.name);
@@ -249,6 +294,15 @@ where P = principal, r = monthly rate, n = tenure in months
     private readonly bureauService: BureauService,
     private readonly breService: BREService,
   ) {}
+
+  private suggestFollowups(message: string): string[] {
+    const m = message.toLowerCase();
+    if (m.includes('cibil') || m.includes('score')) return ['How do I improve my CIBIL score?', 'What loans can I get with my score?'];
+    if (m.includes('emi') || m.includes('burden')) return ['How to reduce my EMI?', 'Can I extend my loan tenure?'];
+    if (m.includes('transfer') || m.includes('bt')) return ['What are BT charges?', 'Which bank gives best BT rate?'];
+    if (m.includes('top-up') || m.includes('topup')) return ['Am I eligible for top-up?', 'What is LTV ratio?'];
+    return ['How can I save on interest?', 'What is my debt-to-income ratio?', 'How to close my loan faster?'];
+  }
 
   async generateInsights(userId: string): Promise<ProactiveInsight[]> {
     const bureau = await this.bureauService.getCachedBureau(userId);
@@ -433,17 +487,19 @@ where P = principal, r = monthly rate, n = tenure in months
   ): Promise<{ reply: string; suggestions?: string[] }> {
     const lowerMsg = message.toLowerCase().trim();
 
-    // PRODUCTION: Replace this rule-based matching with LLM call:
-    // ─────────────────────────────────────────────────────────────
-    // const contextStr = JSON.stringify({
-    //   bureau: context.bureau,
-    //   strategies: context.strategies,
-    //   conversationHistory: context.conversationHistory,
-    // });
-    // const llmResponse = await this.callFinGPT(message, contextStr);
-    // return { reply: llmResponse.text, suggestions: llmResponse.followups };
-    // ─────────────────────────────────────────────────────────────
+    // ── Try Ollama LLM first ──────────────────────────────────────────────────
+    const systemContext = context.bureau
+      ? `CIBIL Score: ${context.bureau.cibilScore ?? 'N/A'}
+Loans: ${JSON.stringify((context.bureau.loans ?? []).map((l: any) => ({ lender: l.lender, type: l.accountType, rate: l.rate, outstanding: l.outstanding, emi: l.emi })))}
+Strategies available: ${(context.strategies ?? []).length} strategies computed`
+      : 'No bureau data loaded yet.';
 
+    const llmReply = await callOllama(message, systemContext, context.conversationHistory ?? []);
+    if (llmReply && llmReply.length > 20) {
+      return { reply: llmReply, suggestions: this.suggestFollowups(message) };
+    }
+
+    // ── Fall back to rule-based matching ──────────────────────────────────────
     // Match against knowledge base
     for (const entry of this.knowledgeBase) {
       if (entry.patterns.some(p => lowerMsg.includes(p))) {
