@@ -680,16 +680,23 @@ export function buildLoanStrategies(
       conflictsWith: [], fees: undefined,
       eligibility: 'Request tenure extension on HL or largest loan — reduces EMI immediately, increases total interest. Combine with rate reduction.',
       recommendation: `Step 1: Execute highest-impact BT strategy → Step 2: Tenure extension on HL → Step 3: Foreclose smallest loan with any lump sum. Target: EMI < 50% of income (${formatInrShort(Math.round(income * 0.50))}/mo).`,
-      loanIds: loans.map(l => l.id),
+      loanIds: [], // Warning — no conflicts, it's advisory only
     };
     results.push({ loanId: -3, loan: { id: -3, lender: 'Overall', accountType: 'EMI Health', accountNumber: '', sanctionAmount: 0, outstanding: totalEmi * 12, emi: totalEmi, rate: 0, dpd: 0, closureMonths: 12 }, strategies: [warnStrat], recommended: warnStrat });
   }
 
   // ─── Cross-group conflict propagation ─────────────────────────────────────
+  // Rule: two strategies conflict ONLY if they both involve the SAME specific loan
+  // (same loanId, both > 0). Warning/advisory strategies (loanIds: []) never conflict.
+  // "Close faster" strategies conflict only with BT/Topup for the same loan.
   const allStrats = results.flatMap(r => r.strategies);
   allStrats.forEach(s => {
+    if (!s.loanIds.length) return; // advisory strategies don't conflict
     allStrats.forEach(other => {
-      if (s.id !== other.id && s.loanIds.some(lid => other.loanIds.includes(lid) && lid > 0)) {
+      if (s.id === other.id || !other.loanIds.length) return;
+      // Only conflict if they share a positive loanId AND both are "action" strategies (not advisory)
+      const shared = s.loanIds.filter(lid => lid > 0 && other.loanIds.includes(lid));
+      if (shared.length > 0) {
         if (!s.conflictsWith.includes(other.id)) s.conflictsWith.push(other.id);
         if (!other.conflictsWith.includes(s.id)) other.conflictsWith.push(s.id);
       }

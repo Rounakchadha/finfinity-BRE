@@ -194,15 +194,15 @@ export const useAppStore = create<AppStore>()(
 
           const isSelected = s.selectedStrategyIds.includes(id);
           if (isSelected) {
+            // Deselect
             return { selectedStrategyIds: s.selectedStrategyIds.filter((sid) => sid !== id) };
           }
 
-          // Check conflicts
-          const conflicts = strategy.conflictsWith || [];
-          const hasConflict = conflicts.some((cid) => s.selectedStrategyIds.includes(cid));
-          if (hasConflict) return s;
-
-          return { selectedStrategyIds: [...s.selectedStrategyIds, id] };
+          // Auto-deselect conflicting strategies and add this one
+          // (better UX than blocking — user's intent is clear)
+          const conflicts = new Set(strategy.conflictsWith || []);
+          const next = s.selectedStrategyIds.filter((sid) => !conflicts.has(sid));
+          return { selectedStrategyIds: [...next, id] };
         }),
       clearSelectedStrategies: () => set({ selectedStrategyIds: [] }),
 

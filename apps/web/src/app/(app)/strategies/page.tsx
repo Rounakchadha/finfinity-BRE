@@ -355,16 +355,34 @@ function buildPlan(profile: CustomerProfile, groups: LoanStrategies[]): PlanStep
 // ─────────────────────────────────────────────────────────────────────────────
 
 function filterByGoal(allStrats: ExtendedStrategy[], goal: GoalFilter): ExtendedStrategy[] {
+  // Exclude warning/advisory strategies from goal views
+  const actionable = allStrats.filter(s => !s.title.startsWith('⚠️'));
   switch (goal) {
     case 'reduce-emi':
-      return allStrats.filter(s => s.monthlyEmiFreed > 0).sort((a, b) => b.monthlyEmiFreed - a.monthlyEmiFreed);
+      // Show strategies that free up monthly EMI, sorted by EMI impact
+      return actionable
+        .filter(s => s.monthlyEmiFreed > 0)
+        .sort((a, b) => b.monthlyEmiFreed - a.monthlyEmiFreed);
+
     case 'reduce-debt':
-      return allStrats.filter(s => s.totalInterestSaved > 0 || (s.netSaving ?? 0) > 0)
+      // Show all strategies that save interest (BT, consolidation, etc.), sorted by net saving
+      return actionable
+        .filter(s => (s.netSaving ?? s.totalInterestSaved ?? 0) > 0)
         .sort((a, b) => (b.netSaving ?? b.totalInterestSaved) - (a.netSaving ?? a.totalInterestSaved));
+
     case 'grow-wealth':
-      return allStrats.filter(s => s.lumpSumAvailable > 0 || s.subTag === 'TOPUP_INVEST');
+      // Show top-up/LAP strategies that unlock cash, fallback to high-saving BT if nothing
+      const cashStrats = actionable.filter(s => s.lumpSumAvailable > 0 || s.subTag === 'TOPUP_INVEST' || s.tag === 'LAP');
+      if (cashStrats.length > 0) return cashStrats;
+      // Fallback: show BT strategies that free the most EMI (that freed EMI can be invested)
+      return actionable.filter(s => s.monthlyEmiFreed > 500).sort((a, b) => b.monthlyEmiFreed - a.monthlyEmiFreed).slice(0, 3);
+
     case 'consolidate':
-      return allStrats.filter(s => s.tag === 'CONSOLIDATE' || s.subTag === 'TOPUP_CONSOLIDATE');
+      // Show consolidation and top-up consolidation strategies, fallback to BT
+      const consolStrats = actionable.filter(s => s.tag === 'CONSOLIDATE' || s.subTag === 'TOPUP_CONSOLIDATE');
+      if (consolStrats.length > 0) return consolStrats;
+      // Fallback: show all BT strategies (moving debt to better lenders is a form of consolidation)
+      return actionable.filter(s => s.tag === 'BT').sort((a, b) => b.netSaving - a.netSaving);
   }
 }
 
@@ -693,22 +711,26 @@ function TallyBar({ selectedIds, allStrats, onViewResults }: {
 
 export default function StrategiesPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const {
     auth, bureau, profile,
     setStrategies, selectedStrategyIds, toggleStrategy, setLoanFees, setProfile,
   } = useAppStore();
 
-  // Read goal/tab from URL params (set by dashboard quick actions)
-  const urlTab  = (searchParams.get('tab') as TabView | null) ?? 'plan';
-  const urlGoal = (searchParams.get('goal') as GoalFilter | null) ?? 'reduce-emi';
-
   const [loanGroups, setLoanGroups] = useState<LoanStrategies[]>([]);
   const [planSteps, setPlanSteps] = useState<PlanStep[]>([]);
   const [customerProfile, setCustomerProfile] = useState<CustomerProfile | null>(null);
   const [isBuilding, setIsBuilding] = useState(true);
-  const [tab, setTab] = useState<TabView>(urlTab);
-  const [goalFilter, setGoalFilter] = useState<GoalFilter>(urlGoal);
+  const [tab, setTab] = useState<TabView>('plan');
+  const [goalFilter, setGoalFilter] = useState<GoalFilter>('reduce-emi');
+
+  // Read URL params client-side (Next.js App Router passes empty searchParams server-side)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const t = params.get('tab') as TabView | null;
+    const g = params.get('goal') as GoalFilter | null;
+    if (t) setTab(t);
+    if (g) setGoalFilter(g);
+  }, []);
 
   useEffect(() => {
     if (!auth.isAuthenticated) router.replace('/auth');
@@ -735,6 +757,19 @@ export default function StrategiesPage() {
       const steps = buildPlan(profile_, groups);
       setPlanSteps(steps);
       setIsBuilding(false);
+
+      // Auto-select the best strategy for the active goal when arriving from a quick action
+      const params = new URLSearchParams(window.location.search);
+      const goal = params.get('goal') as GoalFilter | null;
+      if (goal) {
+        const allS = groups.flatMap(g => g.strategies);
+        const filtered = filterByGoal(allS, goal);
+        if (filtered.length > 0) {
+          // Select the top strategy (store already cleared by build)
+          useAppStore.getState().clearSelectedStrategies();
+          useAppStore.getState().toggleStrategy(filtered[0].id);
+        }
+      }
     }, 300);
   }, [bureau.loans, bureau.cibilScore, profile.income, profile.houseValue, profile.ownHouse]);
 
@@ -932,7 +967,24 @@ export default function StrategiesPage() {
                 {/* Goal strategies */}
                 <div className="space-y-2">
                   {goalStrats.length === 0 && (
-                    <div className="text-center py-8 text-muted text-sm">No strategies match this goal.</div>
+                    <div className="rounded-2xl border border-border bg-card p-5 text-center">
+                      <div className="text-2xl mb-2">
+                        {goalFilter === 'grow-wealth' ? '🏠' : goalFilter === 'consolidate' ? '🔗' : '💡'}
+                      </div>
+                      <p className="text-sm font-semibold text-text mb-1">
+                        {goalFilter === 'grow-wealth' ? 'No property equity available yet' :
+                         goalFilter === 'consolidate' ? 'Not enough loans to consolidate' :
+                         'No matching strategies found'}
+                      </p>
+                      <p className="text-xs text-muted">
+                        {goalFilter === 'grow-wealth' ? 'To unlock cash, you need a Home Loan or owned property for a top-up or LAP. Check the "Your Plan" tab for what you can do now.' :
+                         goalFilter === 'consolidate' ? 'Consolidation works best when you have 3+ high-rate loans. Try the "Your Plan" tab instead.' :
+                         'Switch to "Your Plan" to see your personalised action steps.'}
+                      </p>
+                      <button onClick={() => setTab('plan')} className="mt-3 text-xs text-mint border border-mint/30 px-3 py-1.5 rounded-lg hover:bg-mint/10 transition-colors">
+                        View Your Plan →
+                      </button>
+                    </div>
                   )}
                   {goalStrats.slice(0, 6).map(s => {
                     const isSelected = selectedStrategyIds.includes(s.id);
