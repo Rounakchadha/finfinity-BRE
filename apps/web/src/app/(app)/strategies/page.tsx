@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronLeft, ArrowRight, Home, CreditCard, Briefcase,
@@ -693,17 +693,22 @@ function TallyBar({ selectedIds, allStrats, onViewResults }: {
 
 export default function StrategiesPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const {
     auth, bureau, profile,
     setStrategies, selectedStrategyIds, toggleStrategy, setLoanFees, setProfile,
   } = useAppStore();
 
+  // Read goal/tab from URL params (set by dashboard quick actions)
+  const urlTab  = (searchParams.get('tab') as TabView | null) ?? 'plan';
+  const urlGoal = (searchParams.get('goal') as GoalFilter | null) ?? 'reduce-emi';
+
   const [loanGroups, setLoanGroups] = useState<LoanStrategies[]>([]);
   const [planSteps, setPlanSteps] = useState<PlanStep[]>([]);
   const [customerProfile, setCustomerProfile] = useState<CustomerProfile | null>(null);
   const [isBuilding, setIsBuilding] = useState(true);
-  const [tab, setTab] = useState<TabView>('plan');
-  const [goalFilter, setGoalFilter] = useState<GoalFilter>('reduce-emi');
+  const [tab, setTab] = useState<TabView>(urlTab);
+  const [goalFilter, setGoalFilter] = useState<GoalFilter>(urlGoal);
 
   useEffect(() => {
     if (!auth.isAuthenticated) router.replace('/auth');

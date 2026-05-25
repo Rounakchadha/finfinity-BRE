@@ -151,10 +151,10 @@ export default function DashboardPage() {
   }, [loans, highestRate, emiRatio, totalInterest]);
 
   const quickActions = [
-    { label: 'Reduce my EMI', icon: TrendingDown, path: '/strategies', color: 'text-green' },
-    { label: 'I need cash', icon: Wallet, path: '/products', color: 'text-blue' },
-    { label: 'Consolidate debt', icon: RefreshCw, path: '/strategies', color: 'text-purple' },
-    { label: 'Check strategies', icon: Target, path: '/strategies', color: 'text-mint' },
+    { label: 'Reduce my EMI', icon: TrendingDown, path: '/strategies?goal=reduce-emi&tab=bygoal', color: 'text-green', sub: 'Lower monthly outflow' },
+    { label: 'I need cash', icon: Wallet, path: '/strategies?goal=grow-wealth&tab=bygoal', color: 'text-blue', sub: 'Unlock property equity' },
+    { label: 'Consolidate loans', icon: RefreshCw, path: '/strategies?goal=consolidate&tab=bygoal', color: 'text-purple', sub: 'Merge into 1 lower-rate loan' },
+    { label: 'See my full plan', icon: Target, path: '/strategies?tab=plan', color: 'text-mint', sub: 'Step-by-step savings plan' },
   ];
 
   const today = new Date();
@@ -402,9 +402,12 @@ export default function DashboardPage() {
                 <div className="w-9 h-9 rounded-xl bg-faint flex items-center justify-center group-hover:bg-mint/10 transition-colors">
                   <action.icon className={clsx('w-4 h-4', action.color)} />
                 </div>
-                <div className="flex items-center justify-between w-full">
-                  <span className="text-sm font-medium text-text leading-snug">{action.label}</span>
-                  <ChevronRight className="w-3.5 h-3.5 text-muted group-hover:text-mint transition-colors" />
+                <div className="w-full">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-text leading-snug">{action.label}</span>
+                    <ChevronRight className="w-3.5 h-3.5 text-muted group-hover:text-mint transition-colors" />
+                  </div>
+                  {'sub' in action && <p className="text-[10px] text-muted mt-0.5 leading-tight">{(action as any).sub}</p>}
                 </div>
               </motion.button>
             ))}

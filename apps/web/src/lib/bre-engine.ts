@@ -675,7 +675,7 @@ export function buildLoanStrategies(
       id: nextId(), tag: 'PARTIAL',
       title: `⚠️ EMI Overload: ${emiRatio}% of income — critical`,
       reason: `Total EMI ${formatInrShort(totalEmi)}/month = ${emiRatio}% of your income. Healthy maximum is 50%. You have minimal buffer for emergencies. Executing the BT and consolidation strategies above will bring this ratio down.`,
-      monthlyEmiFreed: Math.round(totalEmi - income * 0.50),
+      monthlyEmiFreed: 0, // This is a warning, not an actual action — do not add to wealth totals
       totalInterestSaved: 0, lumpSumAvailable: 0, netSaving: 0,
       conflictsWith: [], fees: undefined,
       eligibility: 'Request tenure extension on HL or largest loan — reduces EMI immediately, increases total interest. Combine with rate reduction.',
