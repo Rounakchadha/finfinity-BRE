@@ -1,0 +1,93 @@
+// Finfinity BRE - Prisma Schema
+// Financial Intelligence Platform Database Models
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         String   @id @default(cuid())
+  pan        String   @unique
+  mobile     String   @unique
+  name       String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  bureauCache  BureauCache[]
+  applications Application[]
+  chatHistory  ChatHistory[]
+
+  @@map("users")
+}
+
+model BureauCache {
+  id         String   @id @default(cuid())
+  userId     String
+  data       Json     // Full bureau response JSON
+  cibilScore Int
+  fetchedAt  DateTime @default(now())
+  expiresAt  DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("bureau_cache")
+}
+
+model Application {
+  id          String            @id @default(cuid())
+  userId      String
+  productType ApplicationType
+  lender      String
+  amount      Float
+  rate        Float
+  tenure      Int               // months
+  status      ApplicationStatus @default(DRAFT)
+  metadata    Json?             // Additional lender-specific data
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@map("applications")
+}
+
+model ChatHistory {
+  id        String   @id @default(cuid())
+  userId    String
+  messages  Json     // Array of { role, content, timestamp }
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("chat_history")
+}
+
+enum ApplicationType {
+  PERSONAL_LOAN
+  HOME_LOAN
+  CREDIT_CARD
+  BALANCE_TRANSFER
+  TOP_UP
+  LOAN_AGAINST_PROPERTY
+}
+
+enum ApplicationStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  DISBURSED
+  CANCELLED
+}
